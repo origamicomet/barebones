@@ -1,0 +1,20 @@
+{
+	"folders":
+	[
+		{
+			"path": ".",
+
+			"file_exclude_patterns": [
+				"*.sublime-project",
+				"VERSION"
+			],
+
+			"folder_exclude_patterns": [
+				"_build/tools/cache",
+				"_build/bin",
+				"_build/lib",
+				"_build/obj"
+			]
+		}
+	]
+}

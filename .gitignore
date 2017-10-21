@@ -1,0 +1,16 @@
+# Ignore Sublime Text 2/3 junk.
+*.sublime-workspace
+
+# Ignore automatically fetched tools.
+_build/tools/cache
+
+# Ignore auto-generated intermediates.
+_build/unity.cc
+
+# Ingore build artifacts.
+_build/bin
+_build/lib
+_build/obj
+
+# Ignore releases.
+_rel/
