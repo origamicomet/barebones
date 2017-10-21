@@ -4,9 +4,9 @@
 
 if not defined TOOLCHAIN (
   echo Using latest Visual Studio install... 1>&2
-  call %~dp0\scripts\vc.bat latest windows x86
+  call %~dp0\scripts\vc.bat latest windows x86_64
 ) else (
-  call %~dp0\scripts\vc.bat %TOOLCHAIN% windows x86
+  call %~dp0\scripts\vc.bat %TOOLCHAIN% windows x86_64
 )
 
 if not "%ERRORLEVEL%"=="0" (

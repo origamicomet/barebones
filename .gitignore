@@ -5,7 +5,7 @@
 _build/tools/cache
 
 # Ignore auto-generated intermediates.
-_build/unity.cc
+_build/*.cc
 
 # Ingore build artifacts.
 _build/bin
