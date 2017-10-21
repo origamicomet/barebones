@@ -57,5 +57,5 @@ set PROJECT_COMPILE=%PROJECT_COMPILE% /D_SCL_SECURE_NO_WARNINGS /D_CRT_SECURE_NO
 @rem Shut up complaints about usage of Microsoft-specific CRT functionality.
 set PROJECT_COMPILE=%PROJECT_COMPILE% /D_CRT_NONSTDC_NO_DEPRECATE
 
-%PROJECT_COMPILE% %PROJECT_INCLUDES% /Fo_build\obj\project_release_windows_%PROJECT_SUFFIX%.obj _build\project_release_windows_%PROJECT_SUFFIX%.cc
+%PROJECT_COMPILE% %PROJECT_INCLUDES% /Fd_build\obj\project_release_windows_%PROJECT_SUFFIX%.pdb /Fo_build\obj\project_release_windows_%PROJECT_SUFFIX%.obj _build\project_release_windows_%PROJECT_SUFFIX%.cc
 %PROJECT_LINK% /out:_build\bin\%PROJECT_BINARY% _build\obj\project_release_windows_%PROJECT_SUFFIX%.obj %PROJECT_LIBRARIES%

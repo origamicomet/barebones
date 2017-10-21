@@ -61,5 +61,5 @@ set PROJECT_COMPILE=%PROJECT_COMPILE% /D_CRT_NONSTDC_NO_DEPRECATE
 @rem Disable address space layout randomization to ease debugging.
 set PROJECT_LINK=%PROJECT_LINK% /DYNAMICBASE:NO
 
-%PROJECT_COMPILE% %PROJECT_INCLUDES% /Fo_build\obj\project_debug_windows_%PROJECT_SUFFIX%.obj _build\project_debug_windows_%PROJECT_SUFFIX%.cc
+%PROJECT_COMPILE% %PROJECT_INCLUDES% /Fd_build\obj\project_debug_windows_%PROJECT_SUFFIX%.pdb /Fo_build\obj\project_debug_windows_%PROJECT_SUFFIX%.obj _build\project_debug_windows_%PROJECT_SUFFIX%.cc
 %PROJECT_LINK% /out:_build\bin\%PROJECT_BINARY% _build\obj\project_debug_windows_%PROJECT_SUFFIX%.obj %PROJECT_LIBRARIES%
