@@ -5,27 +5,128 @@ require 'optparse'
 require 'fileutils'
 require 'open3'
 
-HOST =
-  case RbConfig::CONFIG["host_os"]
-    when /mswin|windows|mingw|cygwin/i
-      'windows'
-    when /darwin/i
-      'mac'
-    when /linux/i
-      'linux'
-    end
-
-TOOLCHAINS = %w(vs clang gcc).freeze
-PLATFORMS = %w(windows mac linux uwp android ios xb1 ps4).freeze
-ARCHITECTURES = %w(x86 x86_64).freeze
-CONFIGURATIONS = %w(debug release).freeze
+ROOT = File.expand_path(File.dirname(__FILE__))
 
 FLAGS = {
-  # Enables targeting of mobile platforms, i.e. Android and iOS.
+  # Default verbosity.
+  :verbose => false,
+
+  # Toggles targeting of mobile platforms, i.e. Android and iOS.
   :mobile => false,
-  # Enables targeting of closed platforms, i.e. Xbox One and PlayStation 4.
+
+  # Toggles targeting of closed platforms, i.e. Xbox One and PlayStation 4.
   :closed => false,
 }.freeze
+
+$verbose = FLAGS[:verbose]
+
+module Terminal
+  def self.black(message); self.colorize(message, 30) end
+  def self.red(message); self.colorize(message, 31) end
+  def self.green(message); self.colorize(message, 32) end
+  def self.yellow(message); self.colorize(message, 33) end
+  def self.blue(message); self.colorize(message, 34) end
+  def self.magenta(message); self.colorize(message, 35) end
+  def self.cyan(message); self.colorize(message, 36) end
+  def self.white(message); self.colorize(message, 37) end
+
+ private
+  def self.colorize(message, cc)
+    $stdout.isatty() ? "\e[#{cc}m#{message}\e[0m" : message
+  end
+end
+
+def log(message)
+  puts(message) if $verbose
+end
+
+def panic(message)
+  puts Terminal.red(message)
+  exit 1
+end
+
+class Platform
+  attr_reader :name
+
+  def initialize(name)
+    @name = name.dup.freeze
+  end
+
+  def self.detect
+    case RbConfig::CONFIG["host_os"]
+      when /mswin|windows|mingw|cygwin/i
+        Platform.new('windows')
+      when /darwin/i
+        Platform.new('mac')
+      when /linux/i
+        Platform.new('linux')
+        'linux'
+      when /bsd/i
+        Platform.new('bsd')
+      else
+        Platform.new('unknown')
+      end
+  end
+
+  def defaults
+    DEFAULTS[@name]
+  end
+
+  def windows?; @name == 'windows'; end
+  def mac?; @name == 'mac'; end
+  def linux?; @name == 'linux'; end
+  def bsd?; @name == 'bsd'; end
+  def uwp?; @name == 'uwp'; end
+  def android?; @name == 'android'; end
+  def ios?; @name == 'ios'; end
+  def xb1?; @name == 'xb1'; end
+  def ps4?; @name == 'ps4'; end
+
+  def host?
+    %w(windows mac linux).include?(@name)
+  end
+
+  def target?
+    if mobile?
+      FLAGS[:mobile]
+    elsif closed?
+      FLAGS[:closed]
+    else
+      true
+    end
+  end
+
+  def desktop?; %w(windows mac linux bsd uwp).include?(@name); end
+  def server?; %w(linux bsd).include?(@name); end
+  def mobile?; %w(android ios).include?(@name); end
+
+  def open?; !closed?; end
+  def closed?; %w(xb1 ps4).include?(@name); end
+
+  def known?; !unknown?; end
+  def unknown?; @name == 'unknown'; end
+end
+
+HOST = Platform.detect.freeze
+
+unless HOST.host?
+  host = RbConfig::CONFIG["host_os"]
+  panic "Building on `#{host}` is not supported."
+end
+
+if HOST.bsd?
+  panic "Building on `bsd` is not supported yet."
+end
+
+HOSTS = %w(windows mac linux).freeze
+
+TOOLCHAINS = %w(vs clang gcc).freeze
+
+PLATFORMS = %w(windows mac linux uwp android ios xb1 ps4).freeze
+
+ARCHITECTURES = %w(x86 x86_64).freeze
+
+CONFIGURATIONS = %w(debug release).freeze
 
 def filter_out_mobile(platforms)
   if FLAGS[:mobile] then platforms else [] end
@@ -36,18 +137,21 @@ def filter_out_closed(platforms)
 end
 
 WHITELIST = {
+  # Which toolchains can be used by which hosts.
   :toolchains => {
     'windows' => %w(vs),
     'mac' => %w(gcc clang),
     'linux' => %w(gcc clang)
   },
 
+  # Which platforms can be targeted by which hosts.
   :platforms => {
     'windows' => %w(windows uwp) + filter_out_mobile(%w(android)) + filter_out_closed(%w(xb1 ps4)),
     'mac' => %w(mac) + filter_out_mobile(%w(ios)),
     'linux' => %w(linux) + filter_out_mobile(%w(android))
   },
 
+  # Which architectures are supported on which platforms.
   :architectures => {
     'windows' => %w(x86 x86_64),
     'mac' => %w(x86 x86_64),
@@ -59,6 +163,7 @@ WHITELIST = {
     'ps4' => %w(x86_64)
   },
 
+  # Which configurations are supported on which platforms.
   :configurations => {
     'windows' => %w(debug release),
     'mac' => %w(debug release),
@@ -100,22 +205,22 @@ DEPENDENCIES = {
   'project' => []
 }.freeze
 
-class String
-  def default; colorize(39) end
-
-  def black; colorize(30) end
-  def red; colorize(31) end
-  def green; colorize(32) end
-  def yellow; colorize(33) end
-  def blue; colorize(34) end
-  def magenta; colorize(35) end
-  def cyan; colorize(36) end
-  def white; colorize(37) end
-
-  def colorize(cc)
-    $stdout.isatty() ? "\e[#{cc}m#{self}\e[0m" : self
-  end
-end
+SCRIPTS = {
+  'project' => {
+    'debug_windows_x86'      => '_build/build_debug_windows_32.bat',
+    'release_windows_x86'    => '_build/build_release_windows_32.bat',
+    'debug_windows_x86_64'   => '_build/build_debug_windows_64.bat',
+    'release_windows_x86_64' => '_build/build_release_windows_64.bat',
+    'debug_mac_x86'          => '_build/build_debug_mac_32.sh',
+    'release_mac_x86'        => '_build/build_release_mac_32.sh',
+    'debug_mac_x86_64'       => '_build/build_debug_mac_64.sh',
+    'release_mac_x86_64'     => '_build/build_release_mac_64.sh',
+    'debug_linux_x86'        => '_build/build_debug_linux_32.sh',
+    'release_linux_x86'      => '_build/build_release_linux_32.sh',
+    'debug_linux_x86_64'     => '_build/build_debug_linux_64.sh',
+    'release_linux_x86_64'   => '_build/build_release_linux_64.sh'
+  }
+}.freeze
 
 class BuildOptions
   attr_reader :toolchain,
@@ -163,8 +268,7 @@ class BuildOptions
                   end
 
         unless version
-          puts "Bad toolchain version!".red
-          exit 1
+          panic "Bad toolchain version!"
         end
 
         @toolchain = {name: parsed[:toolchain][:name], version: version}
@@ -172,45 +276,41 @@ class BuildOptions
         @toolchain = parsed[:toolchain]
       end
     else
-      @toolchain = [DEFAULTS[HOST][:toolchain], 'latest']
+      @toolchain = {name: DEFAULTS[HOST.name][:toolchain], version: 'latest'}
     end
 
     if parsed[:platforms]
       @platforms = parsed[:platforms]
     else
-      @platforms = DEFAULTS[HOST][:platforms]
+      @platforms = DEFAULTS[HOST.name][:platforms]
     end
 
     @platforms.each do |target|
       unless PLATFORMS.include?(target)
-        puts "Cannot target `#{target}`!".red
-        exit 1
+        panic "Cannot target `#{target}`!"
       end
 
-      unless WHITELIST[:platforms][HOST].include?(target)
-        puts "Cannot target `#{target}` on `#{HOST}` host!".red
-        exit 1
+      unless WHITELIST[:platforms][HOST.name].include?(target)
+        panic "Cannot target `#{target}` on `#{HOST.name}` host!"
       end
     end
 
     if parsed[:architectures]
       @architectures = parsed[:architectures]
     else
-      @architectures = DEFAULTS[HOST][:architectures]
+      @architectures = DEFAULTS[HOST.name][:architectures]
     end
 
     @architectures.each do |architecture|
       unless ARCHITECTURES.include?(architecture)
-        puts "Cannot target `#{arch}` systems!".red
-        exit 1
+        panic "Cannot target `#{architecture}` systems!"
       end
     end
 
     @platforms.each do |target|
       @architectures.each do |architecture|
         unless WHITELIST[:architectures][target].include?(architecture)
-          puts "Cannot target `#{architecture}` and `#{target}`!".red
-          exit 1
+          panic "Cannot target `#{architecture}` and `#{target}`!"
         end
       end
     end
@@ -218,21 +318,19 @@ class BuildOptions
     if parsed[:configurations]
       @configurations = parsed[:configurations]
     else
-      @configurations = DEFAULTS[HOST][:configurations]
+      @configurations = DEFAULTS[HOST.name][:configurations]
     end
 
     @configurations.each do |configuration|
       unless CONFIGURATIONS.include?(configuration)
-        puts "No `#{configuration}` configuration!".red
-        exit 1
+        panic "No `#{configuration}` configuration!"
       end
     end
 
     @platforms.each do |target|
       @configurations.each do |configuration|
         unless WHITELIST[:configurations][target].include?(configuration)
-          puts "Cannot target `#{configuration}` configuration and `#{target}`.".red
-          exit 1
+          panic "Cannot target `#{configuration}` configuration and `#{target}`."
         end
       end
     end
@@ -265,6 +363,12 @@ class BuildOptions
 
       options.separator ""
 
+      options.on '-v', '--verbose', "Increases verbosity of output." do
+        $verbose = true
+      end
+
+      options.separator ""
+
       options.on("-h", "--help", "Prints this help.") do
         puts options
         exit
@@ -273,78 +377,128 @@ class BuildOptions
   end
 end
 
-arguments = ARGV.dup
+class CommandLineParser
+  attr_reader :options,
+              :targets
 
-options = BuildOptions.new.parse(arguments)
-
-targets = if arguments.length > 0
-            arguments.dup.freeze
-          else
-            TARGETS
-          end
-
-targets.each do |target|
-  unless TARGETS.include?(target)
-    puts "No target `#{target}`.".red
-    exit 1
+  def initialize
+    @options = BuildOptions.new
+    @targets = []
   end
-end
 
-def matrix(configurations, platforms, architectures)
-  configurations.product(platforms.product(architectures)).map(&:flatten)
-end
+  def parse(arguments)
+    @options.parse(arguments)
 
-def tree(targets)
-  [*targets].map do |target|
-    DEPENDENCIES[target].map do |dependency|
-      tree(dependency)
-    end + [target]
-  end.flatten.uniq
-end
+    if arguments.length > 0
+      # Targets have been explicitly specified.
+      @targets.concat(arguments)
+    else
+      @targets.concat(TARGETS.dup)
+    end
 
-SCRIPTS = {
-  'project' => {
-    'debug_windows_x86'      => '_build/build_debug_windows_32.bat',
-    'release_windows_x86'    => '_build/build_release_windows_32.bat',
-    'debug_windows_x86_64'   => '_build/build_debug_windows_64.bat',
-    'release_windows_x86_64' => '_build/build_release_windows_64.bat',
-    'debug_mac_x86'          => '_build/build_debug_mac_32.sh',
-    'release_mac_x86'        => '_build/build_release_mac_32.sh',
-    'debug_mac_x86_64'       => '_build/build_debug_mac_64.sh',
-    'release_mac_x86_64'     => '_build/build_release_mac_64.sh',
-    'debug_linux_x86'        => '_build/build_debug_linux_32.sh',
-    'release_linux_x86'      => '_build/build_release_linux_32.sh',
-    'debug_linux_x86_64'     => '_build/build_debug_linux_64.sh',
-    'release_linux_x86_64'   => '_build/build_release_linux_64.sh'
-  }
-}.freeze
+    validate!
 
-tree = tree(targets)
-matrix = matrix(options.configurations, options.platforms, options.architectures)
+    self
+  end
 
-built = 0
-building = tree.length * matrix.length
+  def validate!
+    bad = @targets.reject do |target|
+      TARGETS.include?(target)
+    end
 
-Dir.chdir(File.expand_path(File.dirname(__FILE__))) do
-  tree.each do |target|
-    matrix.each do |config, platform, architecture|
-      triplet = "#{config}_#{platform}_#{architecture}"
-
-      puts "[%2d/%-2d] Building `%s` for %s..." % [built+1, building, target, triplet]
-
-      env = {
-        'TOOLCHAIN' => options.toolchain[:version]
-      }
-
-      success = !!system(ENV.to_h.merge(env), SCRIPTS[target][triplet])
-
-      if success
-        puts ("[%2d/%-2d] Success!" % [built+1, building]).green
-      else
-        puts ("[%2d/%-2d] Failed!" % [built+1, building]).red
-      end
-
-      built = built + 1
+    if bad.length > 1
+      panic "Given target `#{bad}` does not exist."
+    elsif bad.length > 0
+      panic "Given targets #{bad.join(' and ')} do not exist."
     end
   end
 end
+
+class BuildDriver
+  def initialize(options)
+    @threads = options.fetch(:threads, 1)
+    @options = nil
+    @targets = []
+    @workload = 0
+    @remaining = 0
+    @tasks = []
+  end
+
+  def run(arguments)
+    parse_command_line(arguments)
+    expand_targets_to_dependencies
+    derive_build_matrix
+    calculate_work_load
+    break_into_tasks
+    run_tasks
+  end
+
+ private
+  def parse_command_line(arguments)
+    command_line_parser = CommandLineParser.new
+    command_line_parser.parse(arguments.dup)
+
+    @options = command_line_parser.options
+    @targets = command_line_parser.targets
+  end
+
+  def expand_targets_to_dependencies
+    tree = lambda { |targets|
+      [*targets].map do |target|
+        DEPENDENCIES[target].map do |dependency|
+          tree.(dependency)
+        end + [target]
+      end.flatten.uniq
+    }
+
+    @targets = tree.(@targets)
+  end
+
+  def derive_build_matrix
+    platforms = @options.platforms
+    architectures = @options.architectures
+    configurations = @options.configurations
+
+    @matrix = configurations.product(platforms.product(architectures)).map(&:flatten)
+  end
+
+  def calculate_work_load
+    @workload = @targets.length * @matrix.length
+    @remaining = @workload
+  end
+
+  def break_into_tasks
+    @targets.each do |target|
+      @matrix.each do |config, platform, architecture|
+        @tasks << lambda {
+          task = @workload - (@remaining = @remaining - 1)
+
+          triplet = "#{config}_#{platform}_#{architecture}"
+
+          puts "[%2d/%-2d] Building `%s` for %s..." % [task, @workload, target, triplet]
+
+          env = {
+            'VERBOSE' => $verbose ? '1' : '0',
+            'TOOLCHAIN' => @options.toolchain[:version]
+          }
+
+          success = !!system(ENV.to_h.merge(env), SCRIPTS[target][triplet])
+
+          if success
+            puts Terminal.green("[%2d/%-2d] Done." % [task, @workload])
+          else
+            puts Terminal.red("[%2d/%-2d] Failed!" % [task, @workload])
+          end
+        }
+      end
+    end
+  end
+
+  def run_tasks
+    Dir.chdir(ROOT) do
+      @tasks.each(&:call)
+    end
+  end
+end
+
+BuildDriver.new(:threads => 1).run(ARGV)
